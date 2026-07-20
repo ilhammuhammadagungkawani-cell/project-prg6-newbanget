@@ -1,20 +1,26 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { LanguageProvider } from './src/context/LanguageContext';
+import { AuthProvider } from './src/context/AuthContext';
+import { FinanceProvider } from './src/context/FinanceContext';
+import { DrawerProvider } from './src/context/DrawerContext';
+import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <FinanceProvider>
+            <DrawerProvider>
+              <AppNavigator />
+            </DrawerProvider>
+          </FinanceProvider>
+          <StatusBar style="auto" />
+        </AuthProvider>
+      </LanguageProvider>
+    </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
