@@ -33,8 +33,6 @@ const AppNavigator = () => {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
           </>
-        ) : initialBalance === null ? (
-          <Stack.Screen name="InitialBalance" component={InitialBalanceScreen} />
         ) : (
           <>
             <Stack.Screen name="Main" component={CustomDrawerNavigator} />

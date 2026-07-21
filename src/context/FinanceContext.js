@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
-import { API_URL } from '../config';
+import { API_URL, GATEWAY_URL } from '../config';
+
 
 const FinanceContext = createContext();
 
@@ -160,12 +161,10 @@ export const FinanceProvider = ({ children }) => {
         setCurrentBalanceState(data.newBalance);
       }
 
-      // Refresh the transactions history list
-      await fetchTransactions();
-
-      return data;
+      // Refresh both current balance and transactions history list
+      await refreshFinance();
     } catch (error) {
-      console.log('Error saving transaction:', error);
+      console.log('Error adding transaction:', error);
       throw error;
     }
   };
@@ -212,40 +211,109 @@ export const FinanceProvider = ({ children }) => {
     }
     await fetchGoals();
   };
-// ---------- Payment‑Gateway helper functions ----------
-import { GATEWAY_URL } from '../config';
 
-// Top‑up via QR‑IS (Xendit) – creates invoice and returns externalId & QR URL
+  // Function to refresh finance data and transactions manually (e.g. after topup / transfer)
+  const refreshFinance = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`${API_URL}/api/finance/${user.email}`);
+      if (response.ok) {
+        const data = await response.json();
+        setInitialBalanceState(data.initialBalance !== undefined ? data.initialBalance : null);
+        setCurrentBalanceState(data.currentBalance !== undefined ? data.currentBalance : null);
+      }
+      await fetchTransactions();
+    } catch (e) {
+      console.log('Error refreshing finance:', e);
+    }
+  };
+
+  return (
+    <FinanceContext.Provider
+      value={{
+        initialBalance,
+        currentBalance,
+        isFinanceLoading,
+        transactions,
+        isTransactionsLoading,
+        goals,
+        isGoalsLoading,
+        setInitialBalance,
+        resetFinanceData,
+        addTransaction,
+        fetchTransactions,
+        refreshFinance,
+        fetchGoals,
+        addGoal,
+        updateGoalSaving,
+        deleteGoal,
+      }}
+    >
+      {children}
+    </FinanceContext.Provider>
+  );
+};
+
+// ---------- Midtrans Payment Gateway helper functions ----------
+
+// Top-up via Midtrans (creates Snap transaction token & redirect URL)
 export const topupViaGateway = async (email, amount) => {
-  const resp = await fetch(`${GATEWAY_URL}/api/topup/create`, {
+  const resp = await fetch(`${API_URL}/api/topup/midtrans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, amount }),
   });
-  if (!resp.ok) throw new Error('Failed to create top‑up');
+  if (!resp.ok) {
+    const errorData = await resp.json();
+    throw new Error(errorData.error || 'Failed to create top-up transaction');
+  }
   const data = await resp.json();
-  return data; // { invoiceUrl, externalId }
+  return data; // { orderId, token, redirectUrl, status }
 };
 
-// Poll Xendit invoice status until PAID (simple interval, 5 s)
-export const pollTopupStatus = async (externalId, onUpdate) => {
+// Poll Midtrans topup status until PAID (interval 3s)
+export const pollTopupStatus = async (orderId, onUpdate) => {
   const interval = setInterval(async () => {
-    const resp = await fetch(`${GATEWAY_URL}/api/topup/status/${externalId}`);
-    if (!resp.ok) return;
-    const { status } = await resp.json();
-    if (onUpdate) onUpdate(status);
-    if (status === 'PAID') clearInterval(interval);
-  }, 5000);
+    try {
+      const resp = await fetch(`${API_URL}/api/topup/status/${orderId}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (onUpdate) onUpdate(data.status);
+      if (data.status === 'PAID' || data.status === 'SETTLEMENT') {
+        clearInterval(interval);
+      }
+    } catch (e) {
+      console.log('Error polling topup status:', e);
+    }
+  }, 3000);
+  return interval;
 };
 
-// Transfer saldo ke pengguna lain
-export const transferTo = async (senderEmail, receiverEmail, amount) => {
-  const resp = await fetch(`${GATEWAY_URL}/api/transfer`, {
+// Transfer Saldo E-Wallet ke Rekening Bank
+export const transferToBank = async (email, bankCode, accountNumber, accountName, amount, notes) => {
+  const resp = await fetch(`${API_URL}/api/transfer/bank`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ senderEmail, receiverEmail, amount }),
+    body: JSON.stringify({ email, bankCode, accountNumber, accountName, amount, notes }),
   });
-  if (!resp.ok) throw new Error('Transfer failed');
+  if (!resp.ok) {
+    const errData = await resp.json();
+    throw new Error(errData.error || 'Transfer ke bank gagal');
+  }
+  return await resp.json();
+};
+
+// Transfer saldo ke pengguna lain (internal sesama akun app)
+export const transferTo = async (senderEmail, receiverEmail, amount, notes) => {
+  const resp = await fetch(`${API_URL}/api/transfer/internal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ senderEmail, receiverEmail, amount, notes }),
+  });
+  if (!resp.ok) {
+    const errData = await resp.json();
+    throw new Error(errData.error || 'Transfer sesama akun gagal');
+  }
   return await resp.json();
 };
 
@@ -274,32 +342,6 @@ export const getMonthlyReport = async (email, month, year) => {
   return await resp.json();
 };
 
-// -----------------------------------------------------------
-
-  return (
-    <FinanceContext.Provider
-      value={{
-        initialBalance,
-        currentBalance,
-        isFinanceLoading,
-        transactions,
-        isTransactionsLoading,
-        goals,
-        isGoalsLoading,
-        setInitialBalance,
-        resetFinanceData,
-        addTransaction,
-        fetchTransactions,
-        fetchGoals,
-        addGoal,
-        updateGoalSaving,
-        deleteGoal,
-      }}
-    >
-      {children}
-    </FinanceContext.Provider>
-  );
-};
-
 export const useFinance = () => useContext(FinanceContext);
 export default FinanceContext;
+

@@ -113,18 +113,22 @@ const TimelineScreen = ({ navigation }) => {
         }
       >
 
-        {/* ── Balance Card ── */}
+        {/* ── Cashflow Balance Card ── */}
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>
-            {locale === 'id' ? 'SALDO ANDA SAAT INI' : 'YOUR CURRENT BALANCE'}
+            {locale === 'id' ? 'SISA CASHFLOW BULAN INI' : 'MONTHLY NET CASHFLOW'}
           </Text>
-          <Text style={styles.balanceValue}>{formatCurrency(currentBalance)}</Text>
+          <Text style={[
+            styles.balanceValue,
+            { color: (stats.totalIncome - stats.totalExpense) < 0 ? '#fca5a5' : '#ffffff' }
+          ]}>
+            {formatCurrency(stats.totalIncome - stats.totalExpense)}
+          </Text>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceRow}>
             <Ionicons name="wallet-outline" size={14} color="#e6f7f3" style={{ marginRight: 5 }} />
             <Text style={styles.initialBalanceLabel}>
-              {locale === 'id' ? 'Saldo Awal: ' : 'Initial Balance: '}
-              <Text style={styles.initialBalanceVal}>{formatCurrency(initialBalance)}</Text>
+              Saldo Real E-Wallet: <Text style={styles.initialBalanceVal}>{formatCurrency(currentBalance)}</Text>
             </Text>
             <View style={styles.txCountBadge}>
               <Text style={styles.txCountText}>
@@ -148,7 +152,7 @@ const TimelineScreen = ({ navigation }) => {
               <Ionicons name="arrow-down-circle" size={22} color="#10ac84" />
             </View>
             <Text style={styles.summaryType}>
-              {locale === 'id' ? 'Pemasukan' : 'Income'}
+              {locale === 'id' ? 'Total Pemasukan' : 'Total Income'}
             </Text>
             <Text style={[styles.summaryAmount, { color: '#10ac84' }]}>
               {isTransactionsLoading
@@ -163,7 +167,7 @@ const TimelineScreen = ({ navigation }) => {
               <Ionicons name="arrow-up-circle" size={22} color="#ff5252" />
             </View>
             <Text style={styles.summaryType}>
-              {locale === 'id' ? 'Pengeluaran' : 'Expense'}
+              {locale === 'id' ? 'Total Pengeluaran' : 'Total Expense'}
             </Text>
             <Text style={[styles.summaryAmount, { color: '#ff5252' }]}>
               {isTransactionsLoading
@@ -225,17 +229,16 @@ const TimelineScreen = ({ navigation }) => {
           )}
         </View>
 
-        {/* ── Add Transaction Button ── */}
-        <TouchableOpacity
-          style={styles.addManualBtn}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('AddTransaction')}
-        >
-          <Ionicons name="add-circle-outline" size={20} color="#10ac84" style={{ marginRight: 8 }} />
-          <Text style={styles.addManualBtnText}>{t('btn_add_manual')}</Text>
-        </TouchableOpacity>
-
       </ScrollView>
+
+      {/* Floating Add Transaction Button (FAB) */}
+      <TouchableOpacity
+        style={styles.fabBtn}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('AddTransaction')}
+      >
+        <Ionicons name="add" size={28} color="#ffffff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -485,6 +488,22 @@ const styles = StyleSheet.create({
     color: '#10ac84',
     fontSize: 15,
     fontWeight: '700',
+  },
+  fabBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#10ac84',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10ac84',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
 });
 

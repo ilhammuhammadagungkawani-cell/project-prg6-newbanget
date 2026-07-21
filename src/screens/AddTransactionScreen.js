@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFinance } from '../context/FinanceContext';
@@ -71,7 +71,8 @@ const AddTransactionScreen = ({ navigation }) => {
   const categories = activeTab === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
 
   const handleSave = async () => {
-    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+    const numericAmount = parseFloat(amount);
+    if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
       Alert.alert('Error', 'Silakan masukkan nominal yang valid.');
       return;
     }
@@ -82,16 +83,25 @@ const AddTransactionScreen = ({ navigation }) => {
 
     setIsSubmitting(true);
     try {
-      // addTransaction function will be implemented in FinanceContext
       await addTransaction({
         type: activeTab, // 'expense' or 'income'
-        amount: parseFloat(amount),
+        amount: numericAmount,
         category: selectedCategory.id,
         notes: note,
         wallet: 'Tabungan Kost', // default wallet linked to database balance
         date: date.toISOString()
       });
-      navigation.goBack();
+
+      // Smart Budget Reminder Popup for Expenses
+      if (activeTab === 'expense' && numericAmount >= 100000) {
+        Alert.alert(
+          '🔔 Pengingat Anggaran Harian',
+          `Pengeluaran untuk "${selectedCategory.label}" sebesar Rp ${numericAmount.toLocaleString('id-ID')} telah dicatat.\n\nTips: Perhatikan sisa jatah anggaran hari ini agar target keuanganmu bulan ini tetap aman! 💪`,
+          [{ text: 'Siap, Mengerti', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        navigation.goBack();
+      }
     } catch (error) {
       Alert.alert('Error', error.message || 'Gagal menyimpan transaksi.');
       setIsSubmitting(false);

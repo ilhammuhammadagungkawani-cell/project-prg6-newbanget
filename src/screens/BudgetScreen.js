@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   Text,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TouchableOpacity,
@@ -15,6 +14,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLanguage } from '../context/LanguageContext';
@@ -178,6 +178,26 @@ const BudgetScreen = () => {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10ac84']} />
           }
         >
+          {/* ── Daily Allowance Reminder Card ── */}
+          <View style={styles.dailyReminderCard}>
+            <View style={styles.dailyReminderHeader}>
+              <Ionicons name="notifications-circle" size={26} color="#0d9488" />
+              <Text style={styles.dailyReminderTitle}>Pengingat Batas Harian</Text>
+            </View>
+            <Text style={styles.dailyReminderSub}>
+              Rekomendasi jatah pengeluaran hari ini agar target bulananmu tetap aman:
+            </Text>
+            <View style={styles.dailyAllowanceRow}>
+              <View>
+                <Text style={styles.allowanceLabel}>Jatah Maksimal Makan/Hari:</Text>
+                <Text style={styles.allowanceValue}>Rp 100.000 / hari</Text>
+              </View>
+              <View style={styles.statusBadgeGreen}>
+                <Ionicons name="checkmark-circle" size={14} color="#15803d" />
+                <Text style={styles.statusBadgeGreenText}>Aman</Text>
+              </View>
+            </View>
+          </View>
           {goals.length === 0 && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyEmoji}>🎯</Text>
@@ -446,6 +466,73 @@ const styles = StyleSheet.create({
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { padding: 16, paddingBottom: 100, flexGrow: 1 },
+
+  // Daily Reminder Card
+  dailyReminderCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#ccfbf1',
+    shadowColor: '#0d9488',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dailyReminderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  dailyReminderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  dailyReminderSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  dailyAllowanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  allowanceLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  allowanceValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#15803d',
+    marginTop: 2,
+  },
+  statusBadgeGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 4,
+  },
+  statusBadgeGreenText: {
+    color: '#15803d',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
