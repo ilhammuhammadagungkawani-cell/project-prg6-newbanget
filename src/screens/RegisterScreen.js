@@ -26,6 +26,8 @@ const RegisterScreen = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [bankName, setBankName] = useState('BCA');
+  const [bankAccount, setBankAccount] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Form errors
@@ -37,8 +39,7 @@ const RegisterScreen = ({ navigation }) => {
   const [confirmPinError, setConfirmPinError] = useState('');
   const [generalError, setGeneralError] = useState('');
 
-  const validateForm = () => {
-    let isValid = true;
+  const clearErrors = () => {
     setNameError('');
     setEmailError('');
     setPasswordError('');
@@ -46,6 +47,11 @@ const RegisterScreen = ({ navigation }) => {
     setPinError('');
     setConfirmPinError('');
     setGeneralError('');
+  };
+
+  const validateForm = () => {
+    clearErrors();
+    let isValid = true;
 
     if (!name.trim()) {
       setNameError(t('err_empty_name'));
@@ -103,7 +109,7 @@ const RegisterScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      await registerUser(name, email, password, pin);
+      await registerUser(name, email, password, pin, bankName, bankAccount);
       Alert.alert(
         locale === 'id' ? 'Berhasil' : 'Success',
         t('success_register'),
@@ -226,6 +232,15 @@ const RegisterScreen = ({ navigation }) => {
               maxLength={6}
               secureTextEntry={true}
               error={confirmPinError}
+            />
+
+            <CustomInput
+              label={locale === 'id' ? 'Nomor Rekening Bank (Opsional)' : 'Bank Account Number (Optional)'}
+              value={bankAccount}
+              onChangeText={setBankAccount}
+              placeholder={locale === 'id' ? 'Contoh: 1234567890 (BCA)' : 'Example: 1234567890'}
+              iconName="card-outline"
+              keyboardType="number-pad"
             />
 
             <CustomButton

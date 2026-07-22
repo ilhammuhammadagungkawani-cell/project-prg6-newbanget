@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity,
-  ScrollView, StatusBar, Image, Alert, ActivityIndicator
+  ScrollView, StatusBar, Image, Alert, ActivityIndicator, Modal, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
 import { API_URL } from '../config';
 
+import { scheduleDailyExpenseReminder, triggerTestNotification, getSavedReminderTime } from '../services/NotificationService';
+
 const SettingsScreen = ({ navigation }) => {
   const { t, locale, changeLanguage } = useLanguage();
   const { user, logoutUser, updateUserProfilePhoto } = useAuth();
@@ -18,24 +20,50 @@ const SettingsScreen = ({ navigation }) => {
 
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [userBankName, setUserBankName] = useState('');
+  const [userBankAccount, setUserBankAccount] = useState('');
+  const [reminderTime, setReminderTime] = useState({ hour: 15, minute: 0 });
 
   useEffect(() => {
-    if (user?.profilePhoto) {
-      setProfilePhoto(user.profilePhoto);
-    } else if (user?.email) {
+    // Load saved reminder time and schedule notification
+    const initReminder = async () => {
+      const savedTime = await getSavedReminderTime();
+      setReminderTime(savedTime);
+      scheduleDailyExpenseReminder(savedTime.hour, savedTime.minute);
+    };
+    initReminder();
+  }, []);
+
+  const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
+
+  const handleSelectHour = async (h) => {
+    await scheduleDailyExpenseReminder(h, 0);
+    setReminderTime({ hour: h, minute: 0 });
+    setIsTimePickerVisible(false);
+    Alert.alert(
+      'Berhasil Disimpan! 🎉',
+      `Notifikasi pengingat harian telah di-set untuk pukul ${String(h).padStart(2, '0')}:00 WIB setiap hari.`
+    );
+  };
+
+  useEffect(() => {
+    if (user?.email) {
       fetchProfile();
     }
   }, [user]);
 
   const fetchProfile = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/users/${user.email}/profile`);
+      const encodedEmail = encodeURIComponent(user.email.trim().toLowerCase());
+      const res = await fetch(`${API_URL}/api/users/${encodedEmail}/profile`);
       if (res.ok) {
         const data = await res.json();
         if (data.profilePhoto) {
           setProfilePhoto(data.profilePhoto);
           updateUserProfilePhoto(data.profilePhoto);
         }
+        if (data.bankName) setUserBankName(data.bankName);
+        if (data.bankAccount) setUserBankAccount(data.bankAccount);
       }
     } catch (e) { /* silent */ }
   };
@@ -137,6 +165,51 @@ const SettingsScreen = ({ navigation }) => {
     );
   };
 
+  const [isBankModalVisible, setIsBankModalVisible] = useState(false);
+  const [inputBankName, setInputBankName] = useState('BCA');
+  const [inputBankAccount, setInputBankAccount] = useState('');
+
+  const handleSaveBankModal = async () => {
+    if (!inputBankAccount || inputBankAccount.trim().length < 5) {
+      Alert.alert('Peringatan', 'Masukkan nomor rekening yang valid (minimal 5 digit).');
+      return;
+    }
+    if (!user || !user.email) {
+      Alert.alert('Error', 'Sesi login tidak ditemukan. Silakan re-login.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/users/update-bank`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          bankName: inputBankName,
+          bankAccount: inputBankAccount.trim()
+        }),
+      });
+      const rawText = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonErr) {
+        console.log('Backend response is non-JSON:', rawText);
+      }
+
+      if (res.ok) {
+        setUserBankName(inputBankName);
+        setUserBankAccount(inputBankAccount.trim());
+        setIsBankModalVisible(false);
+        Alert.alert('Berhasil! 🎉', `Rekening ${inputBankName} - ${inputBankAccount.trim()} tersimpan ke database.`);
+      } else {
+        Alert.alert('Gagal', data.error || `Server Error (${res.status})`);
+      }
+    } catch (e) {
+      console.log('Error saving bank account:', e);
+      Alert.alert('Error', `Terjadi kesalahan: ${e.message}`);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
@@ -170,6 +243,32 @@ const SettingsScreen = ({ navigation }) => {
 
           <Text style={styles.profileName}>{user?.name || 'Mahasiswa'}</Text>
           <Text style={styles.profileEmail}>{user?.email || ''}</Text>
+
+          {/* User Bank Account Info */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              setInputBankName(userBankName || 'BCA');
+              setInputBankAccount(userBankAccount || '');
+              setIsBankModalVisible(true);
+            }}
+            style={{
+              marginTop: 12,
+              padding: 10,
+              backgroundColor: '#f1f5f9',
+              borderRadius: 12,
+              width: '100%',
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#cbd5e1'
+            }}
+          >
+            <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>Rekening Utama Saya (Ketuk untuk ubah):</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#0d9488', marginTop: 2 }}>
+              {userBankAccount ? `${userBankName || 'BCA'} - ${userBankAccount}` : '+ Tambah Nomor Rekening Saya'}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handlePickPhoto} style={styles.changePhotoBtn}>
             <Text style={styles.changePhotoText}>
               {locale === 'id' ? 'Ubah Foto Profil' : 'Change Profile Photo'}
@@ -203,9 +302,63 @@ const SettingsScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* ── Navigation Section ── */}
-        <Text style={styles.sectionLabel}>{locale === 'id' ? 'Fitur' : 'Features'}</Text>
+        {/* ── Navigation & Reminder Section ── */}
+        <Text style={styles.sectionLabel}>{locale === 'id' ? 'Pengingat Harian & Fitur' : 'Daily Reminder & Features'}</Text>
         <View style={styles.settingsGroup}>
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={() => setIsTimePickerVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingsRowLeft}>
+              <View style={[styles.rowIcon, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="time-outline" size={18} color="#f59e0b" />
+              </View>
+              <View>
+                <Text style={styles.settingsRowText}>
+                  {locale === 'id' ? 'Atur Jam Pengingat Harian' : 'Set Daily Reminder Time'}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#0d9488', fontWeight: '600' }}>
+                  {`Jam Aktif: Pukul ${String(reminderTime.hour).padStart(2, '0')}:00 WIB (Ketuk untuk ubah)`}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="create-outline" size={20} color="#0d9488" />
+          </TouchableOpacity>
+
+          <View style={styles.rowDivider} />
+
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={async () => {
+              const success = await triggerTestNotification();
+              if (success) {
+                Alert.alert(
+                  '🔔 Uji Notifikasi Terkirim!',
+                  `Periksa System Bar / Layar Kunci HP Anda!\n\nNotifikasi pengingat harian telah aktif dan akan muncul otomatis setiap pukul ${String(reminderTime.hour).padStart(2, '0')}:00 WIB.`
+                );
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingsRowLeft}>
+              <View style={[styles.rowIcon, { backgroundColor: '#dcfce7' }]}>
+                <Ionicons name="notifications" size={18} color="#10ac84" />
+              </View>
+              <View>
+                <Text style={styles.settingsRowText}>
+                  {locale === 'id' ? 'Tes Notifikasi HP Sekarang' : 'Test HP Push Notification'}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#64748b' }}>
+                  {locale === 'id' ? 'Ketuk untuk mencoba notifikasi di HP' : 'Tap to trigger test push alert'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="paper-plane-outline" size={18} color="#10ac84" />
+          </TouchableOpacity>
+
+          <View style={styles.rowDivider} />
+
           <TouchableOpacity
             style={styles.settingsRow}
             onPress={() => navigation.navigate('NearbyATM')}
@@ -246,6 +399,124 @@ const SettingsScreen = ({ navigation }) => {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* Modal Edit Rekening Bank */}
+      <Modal
+        visible={isBankModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsBankModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>🏦 Atur Rekening Bank Utama</Text>
+              <TouchableOpacity onPress={() => setIsBankModalVisible(false)}>
+                <Ionicons name="close-circle" size={24} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 8 }}>Pilih Nama Bank:</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {['BCA', 'MANDIRI', 'BNI', 'BRI', 'SEABANK'].map((b) => (
+                <TouchableOpacity
+                  key={b}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 14,
+                    borderRadius: 10,
+                    borderWidth: 1.5,
+                    borderColor: inputBankName === b ? '#0d9488' : '#e2e8f0',
+                    backgroundColor: inputBankName === b ? '#ccfbf1' : '#f8fafc',
+                  }}
+                  onPress={() => setInputBankName(b)}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: inputBankName === b ? '#0f766e' : '#64748b' }}>
+                    {b}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 8 }}>Nomor Rekening Bank:</Text>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#f8fafc',
+              borderWidth: 1,
+              borderColor: '#cbd5e1',
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              marginBottom: 20,
+            }}>
+              <Ionicons name="card-outline" size={20} color="#0d9488" style={{ marginRight: 8 }} />
+              <TextInput
+                style={{ flex: 1, height: 48, fontSize: 15, fontWeight: '600', color: '#0f172a' }}
+                keyboardType="numeric"
+                value={inputBankAccount}
+                onChangeText={setInputBankAccount}
+                placeholder="Contoh: 1234567890"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#0d9488',
+                paddingVertical: 14,
+                borderRadius: 14,
+                alignItems: 'center',
+              }}
+              onPress={handleSaveBankModal}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 15 }}>Simpan Rekening ke Database</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Time Selector */}
+      <Modal
+        visible={isTimePickerVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsTimePickerVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>⏰ Pilih Jam Pengingat (Format 24 Jam)</Text>
+              <TouchableOpacity onPress={() => setIsTimePickerVisible(false)}>
+                <Ionicons name="close-circle" size={24} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', paddingVertical: 10 }}>
+              {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                <TouchableOpacity
+                  key={h}
+                  style={{
+                    width: '28%',
+                    paddingVertical: 14,
+                    backgroundColor: reminderTime.hour === h ? '#0d9488' : '#f8fafc',
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: reminderTime.hour === h ? '#0d9488' : '#e2e8f0',
+                    alignItems: 'center',
+                  }}
+                  onPress={() => handleSelectHour(h)}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: reminderTime.hour === h ? '#ffffff' : '#0f172a' }}>
+                    {`${String(h).padStart(2, '0')}:00`}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: reminderTime.hour === h ? '#ccfbf1' : '#64748b', marginTop: 2 }}>
+                    {h >= 18 ? 'Malam' : h >= 15 ? 'Sore' : h >= 12 ? 'Siang' : h >= 5 ? 'Pagi' : 'Dini Hari'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

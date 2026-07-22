@@ -124,8 +124,11 @@ const AddTransactionScreen = ({ navigation }) => {
           placeholder="0"
           placeholderTextColor="rgba(255,255,255,0.7)"
           keyboardType="numeric"
-          value={amount}
-          onChangeText={setAmount}
+          value={amount ? parseInt(amount.replace(/\D/g, '') || '0', 10).toLocaleString('id-ID') : ''}
+          onChangeText={(val) => {
+            const cleanVal = val.replace(/\D/g, '');
+            setAmount(cleanVal);
+          }}
         />
         <Text style={styles.currencyText}>Rp</Text>
       </View>

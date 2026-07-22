@@ -52,6 +52,42 @@ const WalletScreen = () => {
   // New state to control PIN input visibility after initial validation
   const [showPinInput, setShowPinInput] = useState(false);
 
+  // State Saved Accounts
+  const [savedAccounts, setSavedAccounts] = useState([]);
+  const [saveToFavorit, setSaveToFavorit] = useState(true);
+
+  // Fetch saved bank accounts
+  const fetchSavedAccounts = async () => {
+    if (!user?.email) return;
+    try {
+      const encodedEmail = encodeURIComponent(user.email.trim().toLowerCase());
+      const resp = await fetch(`${API_URL}/api/saved-accounts/${encodedEmail}`);
+      const rawText = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        console.log('Saved accounts endpoint returned non-JSON text');
+      }
+      if (resp.ok && data.savedAccounts) {
+        setSavedAccounts(data.savedAccounts);
+      }
+    } catch (e) {
+      console.log('Error fetching saved accounts:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchSavedAccounts();
+  }, [user?.email]);
+
+  const handleSelectSavedAccount = (acc) => {
+    setSelectedBank(acc.bank_code.toLowerCase());
+    setAccountNumber(acc.account_number);
+    setAccountName(acc.account_name);
+    setAccountVerified(true);
+  };
+
   const bankOptions = [
     { code: 'bca', name: 'Bank BCA', color: '#0066ae' },
     { code: 'mandiri', name: 'Bank Mandiri', color: '#003d79' },
@@ -244,6 +280,28 @@ const WalletScreen = () => {
           amtNum,
           transferNotes
         );
+
+        // Auto save to Favorit if checked
+        if (saveToFavorit) {
+          try {
+            const bObj = bankOptions.find(b => b.code === selectedBank);
+            await fetch(`${API_URL}/api/saved-accounts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userEmail: user.email,
+                bankCode: selectedBank,
+                bankName: bObj ? bObj.name : selectedBank.toUpperCase(),
+                accountNumber: accountNumber,
+                accountName: accountName || accountNumber
+              })
+            });
+            fetchSavedAccounts();
+          } catch (e) {
+            console.log('Error saving bank account to favorit:', e);
+          }
+        }
+
         Alert.alert('Transfer Berhasil! 🚀', `Rp ${amtNum.toLocaleString('id-ID')} telah dikirim ke ${selectedBank.toUpperCase()} (${accountNumber})`);
       }
 
@@ -416,9 +474,12 @@ const WalletScreen = () => {
               <TextInput
                 style={styles.modalInput}
                 keyboardType="numeric"
-                value={topupAmount}
-                onChangeText={setTopupAmount}
-                placeholder="50000"
+                value={topupAmount ? parseInt(topupAmount.replace(/\D/g, '') || '0', 10).toLocaleString('id-ID') : ''}
+                onChangeText={(val) => {
+                  const cleanVal = val.replace(/\D/g, '');
+                  setTopupAmount(cleanVal);
+                }}
+                placeholder="50.000"
               />
 
               <View style={styles.presetContainer}>
@@ -470,7 +531,12 @@ const WalletScreen = () => {
         </Modal>
 
         {/* Modal Transfer */}
-        {isTransferModalVisible && (
+        <Modal
+          visible={isTransferModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => { setIsTransferModalVisible(false); setShowPinInput(false); }}
+        >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
@@ -480,144 +546,212 @@ const WalletScreen = () => {
                 </TouchableOpacity>
               </View>
 
-              {/* Mode Switcher */}
-              <View style={styles.modeTabContainer}>
-                <TouchableOpacity
-                  style={[styles.modeTabBtn, transferMode === 'user' && styles.modeTabBtnActive]}
-                  onPress={() => setTransferMode('user')}
-                >
-                  <Ionicons name="people-outline" size={16} color={transferMode === 'user' ? '#0d9488' : '#64748b'} />
-                  <Text style={[styles.modeTabText, transferMode === 'user' && styles.modeTabTextActive]}>
-                    Sesama Akun App
+              {showPinInput ? (
+                /* Step 2: Realistic PIN Verification View */
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 6 }}>
+                    Konfirmasi Transfer Ke:
                   </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modeTabBtn, transferMode === 'bank' && styles.modeTabBtnActive]}
-                  onPress={() => setTransferMode('bank')}
-                >
-                  <Ionicons name="business-outline" size={16} color={transferMode === 'bank' ? '#0d9488' : '#64748b'} />
-                  <Text style={[styles.modeTabText, transferMode === 'bank' && styles.modeTabTextActive]}>
-                    Rekening Bank
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', textAlign: 'center', marginBottom: 2 }}>
+                    {transferMode === 'user' ? receiverEmail : `${selectedBank.toUpperCase()} - ${accountNumber} (${accountName})`}
                   </Text>
-                </TouchableOpacity>
-              </View>
+                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#0d9488', textAlign: 'center', marginBottom: 20 }}>
+                    {formatCurrency(parseFloat(transferAmount))}
+                  </Text>
 
-              {transferMode === 'user' ? (
-                <>
-                  <Text style={styles.inputLabel}>Email Penerima (Sesama App):</Text>
+                  <Text style={styles.inputLabel}>Masukkan 6 Digit PIN Keamanan Anda:</Text>
                   <TextInput
-                    style={styles.modalInput}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={receiverEmail}
-                    onChangeText={setReceiverEmail}
-                    placeholder="contoh: budi@gmail.com"
-                  />
-                </>
-              ) : (
-                <>
-                  {/* Bank Selection List */}
-                  <Text style={styles.inputLabel}>Pilih Bank Tujuan:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                    {bankOptions.map((b) => (
-                      <TouchableOpacity
-                        key={b.code}
-                        style={[
-                          styles.bankChip,
-                          selectedBank === b.code && { borderColor: b.color, backgroundColor: '#f0f9ff' }
-                        ]}
-                        onPress={() => {
-                          setSelectedBank(b.code);
-                          setAccountVerified(false);
-                        }}
-                      >
-                        <Text style={[
-                          styles.bankChipText,
-                          selectedBank === b.code && { color: b.color, fontWeight: '800' }
-                        ]}>
-                          {b.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {/* Account Number & Check */}
-                  <Text style={styles.inputLabel}>Nomor Rekening:</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                    <TextInput
-                      style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
-                      keyboardType="numeric"
-                      value={accountNumber}
-                      onChangeText={(val) => {
-                        setAccountNumber(val);
-                        setAccountVerified(false);
-                      }}
-                      placeholder="1234567890"
-                    />
-                    <TouchableOpacity
-                      style={styles.verifyBtn}
-                      onPress={handleVerifyAccount}
-                      disabled={isVerifyingAccount}
-                    >
-                      {isVerifyingAccount ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <Text style={styles.verifyBtnText}>Cek Rekening</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-
-                  {accountVerified && (
-                    <View style={styles.verifiedBox}>
-                      <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
-                      <Text style={styles.verifiedText}>A.N: {accountName}</Text>
-                    </View>
-                  )}
-                </>
-              )}
-
-              {/* Amount */}
-              <Text style={styles.inputLabel}>Nominal Transfer (Rp):</Text>
-              <TextInput
-                style={styles.modalInput}
-                keyboardType="numeric"
-                value={transferAmount}
-                onChangeText={setTransferAmount}
-                placeholder="100000"
-              />
-
-              {/* Security PIN (conditionally shown) */}
-              {showPinInput && (
-                <>
-                  <Text style={styles.inputLabel}>PIN Keamanan (6-Digit):</Text>
-                  <TextInput
-                    style={styles.modalInput}
+                    style={[styles.modalInput, { fontSize: 22, letterSpacing: 8, textAlign: 'center', fontWeight: '700' }]}
                     keyboardType="numeric"
                     secureTextEntry
                     maxLength={6}
                     value={securityPin}
                     onChangeText={setSecurityPin}
-                    placeholder="******"
+                    placeholder="••••••"
+                    autoFocus
                   />
+
+                  <TouchableOpacity
+                    style={[styles.payBtn, { backgroundColor: '#0d9488', marginTop: 12 }]}
+                    activeOpacity={0.85}
+                    onPress={handleTransferSubmit}
+                    disabled={isProcessing}
+                  >
+                    {isProcessing ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <>
+                        <Ionicons name="lock-closed-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
+                        <Text style={styles.payBtnText}>Konfirmasi & Kirim Uang</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{ marginTop: 14, alignItems: 'center' }}
+                    onPress={() => {
+                      setShowPinInput(false);
+                      setSecurityPin('');
+                    }}
+                  >
+                    <Text style={{ color: '#64748b', fontSize: 13, fontWeight: '600' }}>← Ubah Detail Transfer</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* Step 1: Transfer Input Form */
+                <>
+                  {/* Mode Switcher */}
+                  <View style={styles.modeTabContainer}>
+                    <TouchableOpacity
+                      style={[styles.modeTabBtn, transferMode === 'user' && styles.modeTabBtnActive]}
+                      onPress={() => setTransferMode('user')}
+                    >
+                      <Ionicons name="people-outline" size={16} color={transferMode === 'user' ? '#0d9488' : '#64748b'} />
+                      <Text style={[styles.modeTabText, transferMode === 'user' && styles.modeTabTextActive]}>
+                        Sesama Akun App
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modeTabBtn, transferMode === 'bank' && styles.modeTabBtnActive]}
+                      onPress={() => setTransferMode('bank')}
+                    >
+                      <Ionicons name="business-outline" size={16} color={transferMode === 'bank' ? '#0d9488' : '#64748b'} />
+                      <Text style={[styles.modeTabText, transferMode === 'bank' && styles.modeTabTextActive]}>
+                        Rekening Bank
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {transferMode === 'user' ? (
+                    <>
+                      <Text style={styles.inputLabel}>Email Penerima (Sesama App):</Text>
+                      <TextInput
+                        style={styles.modalInput}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={receiverEmail}
+                        onChangeText={setReceiverEmail}
+                        placeholder="contoh: budi@gmail.com"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {/* Saved Accounts Quick Selection */}
+                      {savedAccounts.length > 0 && (
+                        <>
+                          <Text style={styles.inputLabel}>⭐ Rekening Tersimpan (Favorit):</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                            {savedAccounts.map((acc) => (
+                              <TouchableOpacity
+                                key={acc.id}
+                                style={{
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 8,
+                                  backgroundColor: '#f8fafc',
+                                  borderRadius: 12,
+                                  borderWidth: 1,
+                                  borderColor: accountNumber === acc.account_number ? '#0d9488' : '#cbd5e1',
+                                  marginRight: 8,
+                                }}
+                                onPress={() => handleSelectSavedAccount(acc)}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#0f172a' }}>
+                                  {acc.account_name}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#64748b' }}>
+                                  {acc.bank_code.toUpperCase()} • {acc.account_number}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </>
+                      )}
+
+                      {/* Bank Selection List */}
+                      <Text style={styles.inputLabel}>Pilih Bank Tujuan:</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                        {bankOptions.map((b) => (
+                          <TouchableOpacity
+                            key={b.code}
+                            style={[
+                              styles.bankChip,
+                              selectedBank === b.code && { borderColor: b.color, backgroundColor: '#f0f9ff' }
+                            ]}
+                            onPress={() => {
+                              setSelectedBank(b.code);
+                              setAccountVerified(false);
+                            }}
+                          >
+                            <Text style={[
+                              styles.bankChipText,
+                              selectedBank === b.code && { color: b.color, fontWeight: '800' }
+                            ]}>
+                              {b.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+
+                      {/* Account Number & Check */}
+                      <Text style={styles.inputLabel}>Nomor Rekening:</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                        <TextInput
+                          style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
+                          keyboardType="numeric"
+                          value={accountNumber}
+                          onChangeText={(val) => {
+                            setAccountNumber(val);
+                            setAccountVerified(false);
+                          }}
+                          placeholder="1234567890"
+                        />
+                        <TouchableOpacity
+                          style={styles.verifyBtn}
+                          onPress={handleVerifyAccount}
+                          disabled={isVerifyingAccount}
+                        >
+                          {isVerifyingAccount ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                          ) : (
+                            <Text style={styles.verifyBtnText}>Cek Rekening</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+
+                      {accountVerified && (
+                        <View style={styles.verifiedBox}>
+                          <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
+                          <Text style={styles.verifiedText}>A.N: {accountName}</Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+
+                  {/* Amount */}
+                  <Text style={styles.inputLabel}>Nominal Transfer (Rp):</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    keyboardType="numeric"
+                    value={transferAmount ? parseInt(transferAmount.replace(/\D/g, '') || '0', 10).toLocaleString('id-ID') : ''}
+                    onChangeText={(val) => {
+                      const cleanVal = val.replace(/\D/g, '');
+                      setTransferAmount(cleanVal);
+                    }}
+                    placeholder="100.000"
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.payBtn, { backgroundColor: '#0d9488' }]}
+                    activeOpacity={0.85}
+                    onPress={handleTransferSubmit}
+                    disabled={isProcessing}
+                  >
+                    <Ionicons name="paper-plane-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
+                    <Text style={styles.payBtnText}>Lanjutkan Transfer</Text>
+                  </TouchableOpacity>
                 </>
               )}
-
-              <TouchableOpacity
-                style={[styles.payBtn, { backgroundColor: '#0d9488' }]}
-                activeOpacity={0.85}
-                onPress={handleTransferSubmit}
-                disabled={isProcessing}
-              >
-                {isProcessing ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <>
-                    <Ionicons name="paper-plane-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                    <Text style={styles.payBtnText}>{showPinInput ? 'Kirim Uang Sekarang' : 'Lanjutkan'}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
             </View>
           </View>
         </Modal>
