@@ -24,6 +24,8 @@ const RegisterScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Form errors
@@ -31,6 +33,8 @@ const RegisterScreen = ({ navigation }) => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [confirmPinError, setConfirmPinError] = useState('');
   const [generalError, setGeneralError] = useState('');
 
   const validateForm = () => {
@@ -39,6 +43,8 @@ const RegisterScreen = ({ navigation }) => {
     setEmailError('');
     setPasswordError('');
     setConfirmPasswordError('');
+    setPinError('');
+    setConfirmPinError('');
     setGeneralError('');
 
     if (!name.trim()) {
@@ -73,6 +79,22 @@ const RegisterScreen = ({ navigation }) => {
       isValid = false;
     }
 
+    if (!pin) {
+      setPinError(locale === 'id' ? 'PIN Keamanan tidak boleh kosong' : 'Security PIN is required');
+      isValid = false;
+    } else if (pin.length !== 6 || !/^\d+$/.test(pin)) {
+      setPinError(locale === 'id' ? 'PIN harus berupa 6 angka' : 'PIN must be 6 digits');
+      isValid = false;
+    }
+
+    if (!confirmPin) {
+      setConfirmPinError(locale === 'id' ? 'Konfirmasi PIN tidak boleh kosong' : 'Confirm PIN is required');
+      isValid = false;
+    } else if (pin !== confirmPin) {
+      setConfirmPinError(locale === 'id' ? 'PIN tidak cocok' : 'PIN does not match');
+      isValid = false;
+    }
+
     return isValid;
   };
 
@@ -81,7 +103,7 @@ const RegisterScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      await registerUser(name, email, password);
+      await registerUser(name, email, password, pin);
       Alert.alert(
         locale === 'id' ? 'Berhasil' : 'Success',
         t('success_register'),
@@ -91,7 +113,7 @@ const RegisterScreen = ({ navigation }) => {
       if (error.message === 'email_exists') {
         setGeneralError(t('err_email_exists'));
       } else {
-        setGeneralError('An unexpected error occurred. Please try again.');
+        setGeneralError(error.message || 'An unexpected error occurred. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -180,6 +202,30 @@ const RegisterScreen = ({ navigation }) => {
               iconName="lock-closed-outline"
               secureTextEntry={true}
               error={confirmPasswordError}
+            />
+
+            <CustomInput
+              label={locale === 'id' ? 'PIN Keamanan (6 Digit)' : 'Security PIN (6 Digits)'}
+              value={pin}
+              onChangeText={setPin}
+              placeholder={locale === 'id' ? 'Masukkan 6 angka PIN' : 'Enter 6-digit PIN'}
+              iconName="keypad-outline"
+              keyboardType="number-pad"
+              maxLength={6}
+              secureTextEntry={true}
+              error={pinError}
+            />
+
+            <CustomInput
+              label={locale === 'id' ? 'Konfirmasi PIN (6 Digit)' : 'Confirm Security PIN'}
+              value={confirmPin}
+              onChangeText={setConfirmPin}
+              placeholder={locale === 'id' ? 'Ulangi 6 angka PIN' : 'Repeat 6-digit PIN'}
+              iconName="keypad-outline"
+              keyboardType="number-pad"
+              maxLength={6}
+              secureTextEntry={true}
+              error={confirmPinError}
             />
 
             <CustomButton

@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Linking
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../context/LanguageContext';
@@ -34,6 +35,7 @@ const WalletScreen = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [snapRedirectUrl, setSnapRedirectUrl] = useState(null);
+  const [showWebView, setShowWebView] = useState(false);
 
   // State Transfer
   const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
@@ -47,6 +49,8 @@ const WalletScreen = () => {
   const [securityPin, setSecurityPin] = useState('');
   const [isVerifyingAccount, setIsVerifyingAccount] = useState(false);
   const [accountVerified, setAccountVerified] = useState(false);
+  // New state to control PIN input visibility after initial validation
+  const [showPinInput, setShowPinInput] = useState(false);
 
   const bankOptions = [
     { code: 'bca', name: 'Bank BCA', color: '#0066ae' },
@@ -74,18 +78,19 @@ const WalletScreen = () => {
       const data = await topupViaGateway(user.email, amountNum);
       setActiveOrderId(data.orderId);
       setSnapRedirectUrl(data.redirectUrl);
+      setIsProcessing(false);
 
-      // Open Midtrans Snap Payment Page in Browser
+      // Open Midtrans Snap Payment Page inside WebView
       if (data.redirectUrl) {
-        await Linking.openURL(data.redirectUrl);
+        setShowWebView(true);
       }
 
-      // Start polling for payment completion
+      // Start polling for payment completion in background
       pollTopupStatus(data.orderId, async (status) => {
         if (status === 'PAID' || status === 'SETTLEMENT') {
-          Alert.alert('Berhasil! 🎉', locale === 'id' ? 'Pembayaran Midtrans Sukses! Saldo Anda telah bertambah.' : 'Midtrans Payment Successful! Your balance has been updated.');
+          setShowWebView(false);
           setIsTopupModalVisible(false);
-          setIsProcessing(false);
+          Alert.alert('Berhasil! 🎉', locale === 'id' ? 'Pembayaran Midtrans Sukses! Saldo Anda telah bertambah.' : 'Midtrans Payment Successful! Your balance has been updated.');
           await refreshFinance();
         }
       });
@@ -93,6 +98,24 @@ const WalletScreen = () => {
       console.log('Topup error:', err);
       Alert.alert('Error', err.message || 'Gagal memproses pembayaran Midtrans');
       setIsProcessing(false);
+    }
+  };
+
+  const handleWebViewNavigationStateChange = (navState) => {
+    const { url } = navState;
+    console.log('WebView Navigation URL:', url);
+
+    // If url contains finish / success / settlement / #/success / example.com
+    if (
+      url.includes('transaction_status=settlement') ||
+      url.includes('status_code=200') ||
+      url.includes('finish') ||
+      url.includes('#/success')
+    ) {
+      setShowWebView(false);
+      setIsTopupModalVisible(false);
+      Alert.alert('Berhasil! 🎉', locale === 'id' ? 'Pembayaran Midtrans Sukses! Saldo Anda telah bertambah.' : 'Midtrans Payment Successful! Your balance has been updated.');
+      refreshFinance();
     }
   };
 
@@ -166,6 +189,7 @@ const WalletScreen = () => {
 
   const handleTransferSubmit = async () => {
     const amtNum = parseFloat(transferAmount);
+    // Initial validation (amount, balance, receiver/account based on mode)
     if (!amtNum || amtNum <= 0) {
       Alert.alert('Peringatan', 'Masukkan nominal transfer yang valid');
       return;
@@ -174,19 +198,41 @@ const WalletScreen = () => {
       Alert.alert('Saldo Tidak Cukup', 'Saldo E-Wallet Anda tidak mencukupi untuk transaksi ini.');
       return;
     }
-    if (securityPin.length < 4) {
+    if (transferMode === 'user' && !receiverEmail) {
+      Alert.alert('Peringatan', 'Masukkan email penerima sesama pengguna app');
+      return;
+    }
+    if (transferMode === 'bank' && (!accountNumber || !accountVerified)) {
+      Alert.alert('Peringatan', 'Pastikan nomor rekening sudah terverifikasi');
+      return;
+    }
+    // If PIN input not yet shown, reveal it after initial checks
+    if (!showPinInput) {
+      setShowPinInput(true);
+      return;
+    }
+    // Proceed with PIN verification and actual transfer
+    if (securityPin.length !== 6) {
       Alert.alert('PIN Diperlukan', 'Masukkan 6 angka PIN keamanan Anda');
       return;
     }
 
     setIsProcessing(true);
     try {
+      // Verifikasi PIN ke backend SQL Server
+      const pinRes = await fetch(`${API_URL}/api/users/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, pin: securityPin }),
+      });
+      const pinData = await pinRes.json();
+
+      if (!pinRes.ok || !pinData.valid) {
+        setIsProcessing(false);
+        Alert.alert('PIN Salah ❌', pinData.message || 'PIN Keamanan yang Anda masukkan salah.');
+        return;
+      }
       if (transferMode === 'user') {
-        if (!receiverEmail) {
-          Alert.alert('Peringatan', 'Masukkan email penerima sesama pengguna app');
-          setIsProcessing(false);
-          return;
-        }
         const res = await transferTo(user.email, receiverEmail, amtNum, transferNotes);
         Alert.alert('Transfer Berhasil! 🚀', `Rp ${amtNum.toLocaleString('id-ID')} telah dikirim ke ${res.receiver.name} (${res.receiver.email})`);
       } else {
@@ -201,6 +247,7 @@ const WalletScreen = () => {
         Alert.alert('Transfer Berhasil! 🚀', `Rp ${amtNum.toLocaleString('id-ID')} telah dikirim ke ${selectedBank.toUpperCase()} (${accountNumber})`);
       }
 
+      // Reset all fields and hide PIN input
       setIsTransferModalVisible(false);
       setTransferAmount('');
       setReceiverEmail('');
@@ -208,6 +255,7 @@ const WalletScreen = () => {
       setAccountName('');
       setSecurityPin('');
       setAccountVerified(false);
+      setShowPinInput(false);
       await refreshFinance();
     } catch (err) {
       Alert.alert('Gagal Transfer', err.message || 'Terjadi kesalahan sistem');
@@ -422,17 +470,12 @@ const WalletScreen = () => {
         </Modal>
 
         {/* Modal Transfer */}
-        <Modal
-          visible={isTransferModalVisible}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setIsTransferModalVisible(false)}
-        >
+        {isTransferModalVisible && (
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>💸 Transfer Saldo</Text>
-                <TouchableOpacity onPress={() => setIsTransferModalVisible(false)}>
+                <TouchableOpacity onPress={() => { setIsTransferModalVisible(false); setShowPinInput(false); }}>
                   <Ionicons name="close-circle" size={24} color="#94a3b8" />
                 </TouchableOpacity>
               </View>
@@ -544,17 +587,21 @@ const WalletScreen = () => {
                 placeholder="100000"
               />
 
-              {/* Security PIN */}
-              <Text style={styles.inputLabel}>PIN Keamanan (6-Digit):</Text>
-              <TextInput
-                style={styles.modalInput}
-                keyboardType="numeric"
-                secureTextEntry
-                maxLength={6}
-                value={securityPin}
-                onChangeText={setSecurityPin}
-                placeholder="******"
-              />
+              {/* Security PIN (conditionally shown) */}
+              {showPinInput && (
+                <>
+                  <Text style={styles.inputLabel}>PIN Keamanan (6-Digit):</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    maxLength={6}
+                    value={securityPin}
+                    onChangeText={setSecurityPin}
+                    placeholder="******"
+                  />
+                </>
+              )}
 
               <TouchableOpacity
                 style={[styles.payBtn, { backgroundColor: '#0d9488' }]}
@@ -567,12 +614,86 @@ const WalletScreen = () => {
                 ) : (
                   <>
                     <Ionicons name="paper-plane-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                    <Text style={styles.payBtnText}>Kirim Uang Sekarang</Text>
+                    <Text style={styles.payBtnText}>{showPinInput ? 'Kirim Uang Sekarang' : 'Lanjutkan'}</Text>
                   </>
                 )}
               </TouchableOpacity>
             </View>
           </View>
+        </Modal>
+
+        {/* Modal Midtrans Snap In-App WebView */}
+        <Modal
+          visible={showWebView}
+          animationType="slide"
+          onRequestClose={() => setShowWebView(false)}
+        >
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff' }}>
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: '#e2e8f0',
+              backgroundColor: '#ffffff'
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="card-outline" size={20} color="#0d9488" style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a' }}>
+                  Pembayaran Midtrans
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (snapRedirectUrl) {
+                      Linking.openURL(snapRedirectUrl);
+                    }
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#f0fdf4',
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderRadius: 16,
+                    borderWidth: 1,
+                    borderColor: '#bbf7d0',
+                  }}
+                >
+                  <Ionicons name="open-outline" size={14} color="#16a34a" style={{ marginRight: 4 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#16a34a' }}>
+                    {locale === 'id' ? 'Buka Browser' : 'Open Browser'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setShowWebView(false)}
+                  style={{ padding: 4 }}
+                >
+                  <Ionicons name="close" size={24} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {snapRedirectUrl ? (
+              <WebView
+                source={{ uri: snapRedirectUrl }}
+                onNavigationStateChange={handleWebViewNavigationStateChange}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                startInLoadingState={true}
+                renderLoading={() => (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#0d9488" />
+                    <Text style={{ marginTop: 12, fontSize: 14, color: '#64748b' }}>Memuat halaman pembayaran...</Text>
+                  </View>
+                )}
+              />
+            ) : null}
+          </SafeAreaView>
         </Modal>
 
       </ScrollView>

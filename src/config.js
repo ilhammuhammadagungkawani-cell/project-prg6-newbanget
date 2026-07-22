@@ -17,6 +17,6 @@
 //    - Cari "IPv4 Address" di bawah jaringan aktif Anda (misalnya Wi-Fi).
 // =======================================================
 
-export const API_URL = 'http://10.1.9.195:3001'; // Backend on laptop IP port 3001
-export const GATEWAY_URL = 'http://10.1.9.195:4000'; // Payment gateway service
+export const API_URL = 'http://10.1.13.68:3000'; // Backend on laptop IP port 3000 (sesuai .env)
+export const GATEWAY_URL = 'http://10.1.13.68:4000'; // Payment gateway service
 
